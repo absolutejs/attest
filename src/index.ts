@@ -149,19 +149,10 @@ export const createBlobSigningCommands = (input: {
   const bundlePath = sigstoreBundlePath(artifactPath);
 
   return [
-    [
-      "cosign",
-      "sign-blob",
-      "--yes",
-      "--new-bundle-format=true",
-      "--bundle",
-      bundlePath,
-      artifactPath,
-    ],
+    ["cosign", "sign-blob", "--yes", "--bundle", bundlePath, artifactPath],
     [
       "cosign",
       "verify-blob",
-      "--new-bundle-format=true",
       "--bundle",
       bundlePath,
       ...verificationArguments(identity),
@@ -175,7 +166,6 @@ export const createBlobVerificationCommand = (input: {
 }) => [
   "cosign",
   "verify-blob",
-  "--new-bundle-format=true",
   "--bundle",
   sigstoreBundlePath(assertArtifactPath(input.artifactPath)),
   ...verificationArguments(defineGithubWorkflowIdentity(input.identity)),

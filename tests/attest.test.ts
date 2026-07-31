@@ -181,7 +181,6 @@ test("builds portable blob bundles with immediate identity verification", () => 
     "cosign",
     "sign-blob",
     "--yes",
-    "--new-bundle-format=true",
     "--bundle",
     bundlePath,
     artifactPath,
