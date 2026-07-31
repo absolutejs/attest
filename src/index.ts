@@ -14,7 +14,7 @@ const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const SLSA_PROVENANCE_TYPE = "slsaprovenance1";
 const SPDX_TYPE = "spdxjson";
 
-export const COSIGN_VERSION = "v3.0.6";
+export const COSIGN_VERSION = "v3.1.2";
 
 export type CommandResult = {
   stderr: string;

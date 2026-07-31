@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/attest",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Keyless Sigstore attestation policy, provenance, signing, and verification for private CI pipelines.",
   "type": "module",
   "license": "MIT",
