@@ -9,6 +9,7 @@ import {
   createBlobSigningCommands,
   createBlobVerificationCommand,
   createImagePublicationCommands,
+  createImageVerificationCommands,
   createSlsaProvenancePredicate,
   defineGithubWorkflowIdentity,
   executeCommandPlan,
@@ -150,6 +151,25 @@ test("builds a fail-closed image publication and verification plan", () => {
       sbomPath: "sbom.json",
     }),
   ).toThrow("canonical registry name");
+});
+
+test("builds a verification-only image admission plan", () => {
+  const reference = `ghcr.io/absolutejs/paas-edge@${IMAGE_DIGEST}`;
+  const commands = createImageVerificationCommands({
+    identity,
+    imageReference: reference,
+  });
+  expect(commands.map(([binary, action]) => [binary, action])).toEqual([
+    ["cosign", "verify-attestation"],
+    ["cosign", "verify-attestation"],
+    ["cosign", "verify"],
+  ]);
+  expect(commands[0]).toContain("slsaprovenance1");
+  expect(commands[1]).toContain("spdxjson");
+  for (const command of commands) {
+    expect(command).toContain("--certificate-github-workflow-sha");
+    expect(command.at(LAST_ELEMENT)).toBe(reference);
+  }
 });
 
 test("builds portable blob bundles with immediate identity verification", () => {

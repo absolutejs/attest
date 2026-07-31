@@ -7,6 +7,7 @@ import {
   createBlobSigningCommands,
   createBlobVerificationCommand,
   createImagePublicationCommands,
+  createImageVerificationCommands,
   executeCommandPlan,
   githubWorkflowIdentityFromEnvironment,
   imageAttestationReferences,
@@ -137,12 +138,23 @@ if (command === "provenance") {
     ),
     runner,
   );
+} else if (command === "verify-image") {
+  const identity = githubWorkflowIdentityFromEnvironment(environment);
+  const imageReference = requiredArgument(
+    FIRST_ARGUMENT_INDEX,
+    "image reference",
+  );
+  await assertCosignVersion(runner);
+  await executeCommandPlan(
+    createImageVerificationCommands({ identity, imageReference }),
+    runner,
+  );
 } else if (command === "bundle-path") {
   console.log(
     sigstoreBundlePath(requiredArgument(FIRST_ARGUMENT_INDEX, "artifact path")),
   );
 } else {
   throw new AttestationPolicyError(
-    "Command must be provenance, publish-image, sign-blobs, verify-blobs, or bundle-path",
+    "Command must be provenance, publish-image, sign-blobs, verify-blobs, verify-image, or bundle-path",
   );
 }

@@ -191,7 +191,11 @@ export const createImagePublicationCommands = (input: {
   const reference = assertImageReference(input.imageReference);
   const provenancePath = assertArtifactPath(input.provenancePath);
   const sbomPath = assertArtifactPath(input.sbomPath);
-  const verify = verificationArguments(identity);
+  const [verifyProvenance, verifySbom, verifySignature] =
+    createImageVerificationCommands({
+      identity,
+      imageReference: reference,
+    });
 
   return [
     [
@@ -204,14 +208,7 @@ export const createImagePublicationCommands = (input: {
       SLSA_PROVENANCE_TYPE,
       reference,
     ],
-    [
-      "cosign",
-      "verify-attestation",
-      ...verify,
-      "--type",
-      SLSA_PROVENANCE_TYPE,
-      reference,
-    ],
+    verifyProvenance,
     [
       "cosign",
       "attest",
@@ -222,10 +219,31 @@ export const createImagePublicationCommands = (input: {
       SPDX_TYPE,
       reference,
     ],
-    ["cosign", "verify-attestation", ...verify, "--type", SPDX_TYPE, reference],
+    verifySbom,
     ["cosign", "sign", "--yes", reference],
-    ["cosign", "verify", ...verify, reference],
+    verifySignature,
   ];
+};
+export const createImageVerificationCommands = (input: {
+  identity: GithubWorkflowIdentity;
+  imageReference: string;
+}) => {
+  const identity = defineGithubWorkflowIdentity(input.identity);
+  const reference = assertImageReference(input.imageReference);
+  const verify = verificationArguments(identity);
+
+  return [
+    [
+      "cosign",
+      "verify-attestation",
+      ...verify,
+      "--type",
+      SLSA_PROVENANCE_TYPE,
+      reference,
+    ],
+    ["cosign", "verify-attestation", ...verify, "--type", SPDX_TYPE, reference],
+    ["cosign", "verify", ...verify, reference],
+  ] as const;
 };
 export const createSlsaProvenancePredicate = (input: {
   identity: GithubWorkflowIdentity;

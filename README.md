@@ -70,6 +70,8 @@ absolute-attest verify-blobs \
   release/release.json \
   release/images.env \
   release/sha256sums.txt
+absolute-attest verify-image \
+  "$IMAGE_NAME@$IMAGE_DIGEST"
 ```
 
 The CLI reads GitHub's standard `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW_REF`,
