@@ -35,9 +35,11 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "files": [
-    "dist",
+    "CHANGELOG.md",
+    "LICENSE",
     "README.md",
-    "LICENSE"
+    "changelog.json",
+    "dist"
   ],
   "scripts": {
     "format": "prettier --write \"./**/*.{ts,json,md,mjs}\"",
@@ -47,14 +49,15 @@
     "build": "rm -rf dist && bun build src/index.ts src/cli.ts src/manifest.ts --outdir dist --target=bun --external @absolutejs/manifest --external @sinclair/typebox && tsc -p tsconfig.build.json && absolute-manifest emit",
     "verify-package": "absolute-manifest verify-package",
     "verify-pack": "npm pack --dry-run",
-    "check:package": "bun run typecheck && bun run lint && bun run verify-package && bun run build && bun run verify-package --artifacts && bun run test && bun run verify-pack",
+    "check:package": "bun run typecheck && bun run lint && bun run verify-package && bun run build && bun run test && bun run verify-pack && absolute-changelog check",
     "release": "bun run format && bun run check:package && bun publish"
   },
   "dependencies": {
-    "@absolutejs/manifest": "^0.8.0",
+    "@absolutejs/manifest": "^0.9.0",
     "@sinclair/typebox": "^0.34.0"
   },
   "devDependencies": {
+    "@absolutejs/changelog": "^0.1.2",
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/bun": "^1.3.14",
