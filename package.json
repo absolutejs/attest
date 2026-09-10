@@ -51,14 +51,14 @@
     "verify-pack": "npm pack --dry-run",
     "check:package": "bun run typecheck && bun run lint && bun run verify-package && bun run build && bun run test && bun run verify-pack && absolute-changelog check",
     "release": "bun run format && bun run check:package && bun publish",
-    "prepublishOnly": "absolute-changelog check"
+    "prepublishOnly": "bun run check:package"
   },
   "dependencies": {
     "@absolutejs/manifest": "^0.9.0",
     "@sinclair/typebox": "^0.34.0"
   },
   "devDependencies": {
-    "@absolutejs/changelog": "^0.5.1",
+    "@absolutejs/changelog": "^0.6.0",
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/bun": "^1.3.14",
