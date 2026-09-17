@@ -79,6 +79,25 @@ The CLI reads GitHub's standard `GITHUB_REPOSITORY`, `GITHUB_WORKFLOW_REF`,
 variables. None are credentials. Cosign obtains the job's short-lived OIDC
 identity directly from GitHub Actions.
 
+Trusted servers can verify a portable bundle without managing temporary files:
+
+```ts
+import { verifyPortableBlobBundle } from '@absolutejs/attest';
+
+const verified = await verifyPortableBlobBundle({
+  artifact: certificationJson,
+  bundle,
+  identity: allowedIdentity,
+  runner
+});
+```
+
+The helper bounds the artifact and bundle, writes mode-0600 temporary files,
+requires the pinned Cosign version, verifies the exact GitHub workflow identity
+and blob, returns the bundle SHA-256, and removes the directory in `finally`.
+The caller remains responsible for allowlisting the repository, workflow, and
+ref before treating a valid signature as authorized.
+
 ## Security properties
 
 - No long-lived signing key.

@@ -17,6 +17,7 @@ import {
   githubWorkflowIdentityFromEnvironment,
   imageAttestationReferences,
   sigstoreBundlePath,
+  verifyPortableBlobBundle,
   writeSlsaProvenancePredicate,
   type GithubWorkflowIdentity,
 } from "../src";
@@ -209,6 +210,38 @@ test("pins Cosign before trusting command behavior", async () => {
       stdout: JSON.stringify({ gitVersion: "v3.0.5" }),
     })),
   ).rejects.toThrow(`Cosign ${COSIGN_VERSION} is required`);
+});
+
+test("verifies a bounded portable blob bundle through pinned Cosign", async () => {
+  const commands: string[][] = [];
+  const verification = await verifyPortableBlobBundle({
+    artifact: '{"certified":true}\n',
+    bundle: { mediaType: "application/vnd.dev.sigstore.bundle.v0.3+json" },
+    identity,
+    runner: async (command) => {
+      commands.push([...command]);
+
+      return command[1] === "version"
+        ? {
+            stderr: "",
+            stdout: JSON.stringify({ gitVersion: COSIGN_VERSION }),
+          }
+        : { stderr: "", stdout: "Verified OK" };
+    },
+  });
+
+  expect(commands).toHaveLength(2);
+  expect(commands[1]?.[1]).toBe("verify-blob");
+  expect(verification.identity).toEqual(identity);
+  expect(verification.bundleSha256).toMatch(/^[a-f0-9]{64}$/u);
+  await expect(
+    verifyPortableBlobBundle({
+      artifact: "value",
+      bundle: null,
+      identity,
+      runner: async () => ({ stderr: "", stdout: "" }),
+    }),
+  ).rejects.toThrow("Sigstore bundle is invalid");
 });
 
 test("executes plans sequentially and stops at the first failed boundary", async () => {

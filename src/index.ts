@@ -1,4 +1,6 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com";
@@ -13,6 +15,8 @@ const GITHUB_REF_PATTERN = /^refs\/(?:heads|tags)\/[^@\s]+$/u;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 const SLSA_PROVENANCE_TYPE = "slsaprovenance1";
 const SPDX_TYPE = "spdxjson";
+const MAX_PORTABLE_BLOB_BYTES = 16_777_216;
+const MAX_SIGSTORE_BUNDLE_BYTES = 1_048_576;
 
 export const COSIGN_VERSION = "v3.1.2";
 
@@ -66,6 +70,11 @@ export type ImageAttestationReferences = {
   provenance: string;
   sbom: string;
   signature: string;
+};
+
+export type PortableBlobVerification = {
+  bundleSha256: string;
+  identity: GithubWorkflowIdentity;
 };
 
 export class AttestationPolicyError extends Error {
@@ -356,6 +365,58 @@ export const imageAttestationReferences = (
 };
 export const sigstoreBundlePath = (artifactPath: string) =>
   `${assertArtifactPath(artifactPath)}.sigstore.json`;
+export const verifyPortableBlobBundle = async (input: {
+  artifact: string | Uint8Array;
+  bundle: unknown;
+  identity: GithubWorkflowIdentity;
+  runner: CommandRunner;
+}) => {
+  const identity = defineGithubWorkflowIdentity(input.identity);
+  const artifact =
+    typeof input.artifact === "string"
+      ? new TextEncoder().encode(input.artifact)
+      : input.artifact;
+  if (artifact.byteLength === 0 || artifact.byteLength > MAX_PORTABLE_BLOB_BYTES)
+    throw new AttestationPolicyError("Portable blob size is invalid");
+  if (
+    typeof input.bundle !== "object" ||
+    input.bundle === null ||
+    Array.isArray(input.bundle)
+  )
+    throw new AttestationPolicyError("Sigstore bundle is invalid");
+  let bundleJson: string;
+  try {
+    bundleJson = JSON.stringify(input.bundle);
+  } catch {
+    throw new AttestationPolicyError("Sigstore bundle is invalid");
+  }
+  const bundleBytes = new TextEncoder().encode(bundleJson);
+  if (
+    !bundleJson ||
+    bundleBytes.byteLength > MAX_SIGSTORE_BUNDLE_BYTES
+  )
+    throw new AttestationPolicyError("Sigstore bundle size is invalid");
+  const root = await mkdtemp(path.join(tmpdir(), "absolute-attest-blob-"));
+  const artifactPath = path.join(root, "artifact");
+  try {
+    await writeFile(artifactPath, artifact, { mode: 0o600 });
+    await writeFile(sigstoreBundlePath(artifactPath), bundleBytes, {
+      mode: 0o600,
+    });
+    await assertCosignVersion(input.runner);
+    await executeCommandPlan(
+      [createBlobVerificationCommand({ artifactPath, identity })],
+      input.runner,
+    );
+
+    return {
+      bundleSha256: createHash("sha256").update(bundleBytes).digest("hex"),
+      identity,
+    };
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+};
 export const writeSlsaProvenancePredicate = async (
   outputPath: string,
   input: Parameters<typeof createSlsaProvenancePredicate>[0],

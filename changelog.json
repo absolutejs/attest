@@ -1,5 +1,20 @@
 {
 	"contract": 1,
 	"name": "@absolutejs/attest",
-	"releases": []
+	"releases": [
+		{
+			"changes": [
+				{
+					"kind": "added",
+					"summary": "Portable blob bundles can be verified from memory with pinned Cosign, exact GitHub workflow identity, bounded inputs, and automatic temporary-file cleanup",
+					"symbols": [
+						"PortableBlobVerification",
+						"verifyPortableBlobBundle"
+					]
+				}
+			],
+			"date": "2026-09-17",
+			"version": "0.2.0"
+		}
+	]
 }
