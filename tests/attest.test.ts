@@ -17,6 +17,7 @@ import {
   githubWorkflowIdentityFromEnvironment,
   imageAttestationReferences,
   sigstoreBundlePath,
+  toleratingExistingLogEntries,
   verifyPortableBlobBundle,
   writeSlsaProvenancePredicate,
   type GithubWorkflowIdentity,
@@ -263,4 +264,59 @@ test("executes plans sequentially and stops at the first failed boundary", async
     ),
   ).rejects.toThrow("synthetic failure");
   expect(seen).toEqual(["sign", "verify"]);
+});
+
+describe("an attestation the transparency log already holds", () => {
+  const conflict = new Error(
+    'cosign failed: error signing bundle: [POST /api/v1/log/entries][409] createLogEntryConflict {"code":409,"message":"an equivalent entry already exists in the transparency log with UUID 108e"}',
+  );
+  const failing = (error: Error) => async () => {
+    throw error;
+  };
+
+  test("a sign or attest refused only as a duplicate counts as done", async () => {
+    const runner = toleratingExistingLogEntries(failing(conflict));
+    const results = await Promise.all(
+      [
+        ["cosign", "attest", "--yes", "image@sha256:abc"],
+        ["cosign", "sign", "--yes", "image@sha256:abc"],
+        ["cosign", "sign-blob", "--yes", "artifact.json"],
+      ].map((command) => runner(command)),
+    );
+    for (const result of results)
+      expect(result).toEqual({ stderr: conflict.message, stdout: "" });
+  });
+
+  test("verification, and every other failure, still fails", async () => {
+    await expect(
+      toleratingExistingLogEntries(failing(conflict))([
+        "cosign",
+        "verify-attestation",
+        "image@sha256:abc",
+      ]),
+    ).rejects.toThrow("equivalent entry");
+    await expect(
+      toleratingExistingLogEntries(
+        failing(new Error("cosign failed: tuf refresh failed")),
+      )(["cosign", "attest", "image@sha256:abc"]),
+    ).rejects.toThrow("tuf refresh failed");
+  });
+
+  test("a plan keeps going to the verification after a duplicate", async () => {
+    const ran: string[] = [];
+    const runner = toleratingExistingLogEntries(async (command) => {
+      ran.push(command[1] ?? "");
+      if (command[1] === "attest") throw conflict;
+
+      return { stderr: "", stdout: "verified" };
+    });
+    await executeCommandPlan(
+      [
+        ["cosign", "attest", "image@sha256:abc"],
+        ["cosign", "verify-attestation", "image@sha256:abc"],
+      ],
+      runner,
+    );
+    expect(ran).toEqual(["attest", "verify-attestation"]);
+  });
 });

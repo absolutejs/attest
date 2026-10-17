@@ -5,6 +5,20 @@
 		{
 			"changes": [
 				{
+					"detail": "Signing the same payload for the same digest with the same key yields the same transparency-log entry, and Rekor refuses a second copy with HTTP 409 (\"an equivalent entry already exists\"). Re-attesting an unchanged, reused image therefore failed although its attestation was already published. `publish-image` and `sign-blobs` now treat a sign or attest refused only that way as done; the verification that follows each one in the plan still has to find the attestation for that digest and identity. Every other failure, and any verification failure, still fails. `toleratingExistingLogEntries` wraps a command runner this way.",
+					"kind": "fixed",
+					"summary": "Re-attesting an unchanged artifact no longer fails on the transparency log's duplicate-entry 409",
+					"symbols": [
+						"toleratingExistingLogEntries"
+					]
+				}
+			],
+			"date": "2026-10-17",
+			"version": "0.2.1"
+		},
+		{
+			"changes": [
+				{
 					"kind": "added",
 					"summary": "Portable blob bundles can be verified from memory with pinned Cosign, exact GitHub workflow identity, bounded inputs, and automatic temporary-file cleanup",
 					"symbols": [
