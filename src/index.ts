@@ -365,6 +365,36 @@ export const imageAttestationReferences = (
 };
 export const sigstoreBundlePath = (artifactPath: string) =>
   `${assertArtifactPath(artifactPath)}.sigstore.json`;
+/* Signing the same payload for the same digest with the same key yields the
+   same entry, and the transparency log refuses a second copy (HTTP 409, "an
+   equivalent entry already exists"). A release that reuses an unchanged
+   image re-attests it, so two such releases in a row failed although the
+   attestation was already published (PAAS, 2026-10-17). A sign or attest that
+   fails only that way is already done; the verification that follows every
+   one in a command plan still has to find it, for this digest and identity. */
+const EXISTING_LOG_ENTRY =
+  /an equivalent entry already exists in the transparency log/u;
+
+const isSigningCommand = (command: readonly string[]) =>
+  command[0] === "cosign" &&
+  (command[1] === "attest" ||
+    command[1] === "sign" ||
+    command[1] === "sign-blob" ||
+    command[1] === "attest-blob");
+
+export const toleratingExistingLogEntries =
+  (runner: CommandRunner) => async (command: readonly string[]) => {
+    try {
+      return await runner(command);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!isSigningCommand(command) || !EXISTING_LOG_ENTRY.test(message))
+        throw error;
+
+      return { stderr: message, stdout: "" };
+    }
+  };
+
 export const verifyPortableBlobBundle = async (input: {
   artifact: string | Uint8Array;
   bundle: unknown;
@@ -376,7 +406,10 @@ export const verifyPortableBlobBundle = async (input: {
     typeof input.artifact === "string"
       ? new TextEncoder().encode(input.artifact)
       : input.artifact;
-  if (artifact.byteLength === 0 || artifact.byteLength > MAX_PORTABLE_BLOB_BYTES)
+  if (
+    artifact.byteLength === 0 ||
+    artifact.byteLength > MAX_PORTABLE_BLOB_BYTES
+  )
     throw new AttestationPolicyError("Portable blob size is invalid");
   if (
     typeof input.bundle !== "object" ||
@@ -391,10 +424,7 @@ export const verifyPortableBlobBundle = async (input: {
     throw new AttestationPolicyError("Sigstore bundle is invalid");
   }
   const bundleBytes = new TextEncoder().encode(bundleJson);
-  if (
-    !bundleJson ||
-    bundleBytes.byteLength > MAX_SIGSTORE_BUNDLE_BYTES
-  )
+  if (!bundleJson || bundleBytes.byteLength > MAX_SIGSTORE_BUNDLE_BYTES)
     throw new AttestationPolicyError("Sigstore bundle size is invalid");
   const root = await mkdtemp(path.join(tmpdir(), "absolute-attest-blob-"));
   const artifactPath = path.join(root, "artifact");

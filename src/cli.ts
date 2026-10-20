@@ -15,6 +15,7 @@ import {
   writeSlsaProvenancePredicate,
   type CommandRunner,
   type GithubWorkflowEnvironment,
+  toleratingExistingLogEntries,
 } from "./index";
 
 const COMMAND_INDEX = 2;
@@ -104,7 +105,7 @@ if (command === "provenance") {
       provenancePath,
       sbomPath,
     }),
-    runner,
+    toleratingExistingLogEntries(runner),
   );
   await writeFile(
     evidencePath,
@@ -122,7 +123,7 @@ if (command === "provenance") {
     artifactPaths.flatMap((artifactPath) =>
       createBlobSigningCommands({ artifactPath, identity }),
     ),
-    runner,
+    toleratingExistingLogEntries(runner),
   );
 } else if (command === "verify-blobs") {
   const identity = githubWorkflowIdentityFromEnvironment(environment);
