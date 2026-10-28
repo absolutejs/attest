@@ -7,6 +7,10 @@
 				{
 					"kind": "fixed",
 					"summary": "Image verification retries briefly when the registry has not caught up: `cosign verify` and `verify-attestation` are retried after 2, 4, 8 and 16 seconds, but only for answers that mean the attestation or signature is not visible yet. A wrong identity, issuer or signature still fails at once. Verifying an SBOM right after attaching it read the tag from before the write and failed a release (`retryingVerification`)"
+				},
+				{
+					"kind": "changed",
+					"summary": "The CLI writes what each successful cosign command reported (its transparency-log entry and push target) to stderr, so a release log shows where every signature and attestation went"
 				}
 			],
 			"date": "2026-10-28",

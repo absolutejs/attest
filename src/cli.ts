@@ -47,6 +47,13 @@ const runner: CommandRunner = async (command) => {
     throw new Error(
       `${command[0]} failed: ${stderr.trim() || `exit ${exitCode}`}`,
     );
+  // What cosign did: the transparency-log entry it wrote and where it
+  // pushed. A release once failed with an SBOM that was neither logged nor
+  // attached, and nothing it had said was kept (PAAS, 2026-10-28).
+  if (stderr.trim())
+    process.stderr.write(
+      `[${command.slice(0, 2).join(" ")}] ${stderr.trim()}\n`,
+    );
 
   return { stderr, stdout };
 };
