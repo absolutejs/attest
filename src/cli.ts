@@ -7,6 +7,7 @@ import {
   createBlobSigningCommands,
   createBlobVerificationCommand,
   createImagePublicationCommands,
+  retryingVerification,
   createImageVerificationCommands,
   executeCommandPlan,
   githubWorkflowIdentityFromEnvironment,
@@ -105,7 +106,7 @@ if (command === "provenance") {
       provenancePath,
       sbomPath,
     }),
-    toleratingExistingLogEntries(runner),
+    toleratingExistingLogEntries(retryingVerification(runner)),
   );
   await writeFile(
     evidencePath,
@@ -148,7 +149,7 @@ if (command === "provenance") {
   await assertCosignVersion(runner);
   await executeCommandPlan(
     createImageVerificationCommands({ identity, imageReference }),
-    runner,
+    retryingVerification(runner),
   );
 } else if (command === "bundle-path") {
   console.log(

@@ -395,6 +395,57 @@ export const toleratingExistingLogEntries =
     }
   };
 
+/* A registry read right after a write can return the manifest from before
+   it: cosign keeps every attestation of a digest in one tag, so verifying
+   the SBOM just after attaching it found only the provenance, and four
+   images failed one PAAS release at once (2026-10-28). Only answers that
+   mean "not visible yet" are retried, briefly; a wrong identity, issuer or
+   signature still fails at once. */
+const NOT_YET_VISIBLE =
+  /none of the attestations matched the predicate type|no matching attestations|no signatures found|no matching signatures/u;
+const FIRST_VISIBILITY_DELAY_MS = 2_000;
+const VISIBILITY_RETRIES = 4;
+// 2, 4, 8 and 16 seconds: half a minute in all, then the answer stands.
+const VISIBILITY_DELAYS_MS = [...Array(VISIBILITY_RETRIES).keys()].map(
+  (retry) => FIRST_VISIBILITY_DELAY_MS * 2 ** retry,
+);
+
+const isVerificationCommand = (command: readonly string[]) =>
+  command[0] === "cosign" &&
+  (command[1] === "verify" || command[1] === "verify-attestation");
+
+export const retryingVerification =
+  (
+    runner: CommandRunner,
+    options: {
+      delaysMs?: readonly number[];
+      sleep?: (ms: number) => Promise<unknown>;
+    } = {},
+  ) =>
+  async (command: readonly string[]) => {
+    const delays = options.delaysMs ?? VISIBILITY_DELAYS_MS;
+    const sleep = options.sleep ?? Bun.sleep;
+    const attempt = async (index: number): Promise<CommandResult> => {
+      try {
+        return await runner(command);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const delay = delays[index];
+        if (
+          !isVerificationCommand(command) ||
+          !NOT_YET_VISIBLE.test(message) ||
+          delay === undefined
+        )
+          throw error;
+        await sleep(delay);
+
+        return attempt(index + 1);
+      }
+    };
+
+    return attempt(0);
+  };
+
 export const verifyPortableBlobBundle = async (input: {
   artifact: string | Uint8Array;
   bundle: unknown;
