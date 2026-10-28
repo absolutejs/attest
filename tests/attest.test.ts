@@ -17,6 +17,7 @@ import {
   githubWorkflowIdentityFromEnvironment,
   imageAttestationReferences,
   sigstoreBundlePath,
+  retryingVerification,
   toleratingExistingLogEntries,
   verifyPortableBlobBundle,
   writeSlsaProvenancePredicate,
@@ -318,5 +319,97 @@ describe("an attestation the transparency log already holds", () => {
       runner,
     );
     expect(ran).toEqual(["attest", "verify-attestation"]);
+  });
+});
+
+const SHA256_HEX_LENGTH = 64;
+const FIRST_DELAY = 10;
+const SECOND_DELAY = 20;
+const ATTEMPTS_UNTIL_VISIBLE = 3;
+const DIGEST = "a".repeat(SHA256_HEX_LENGTH);
+const verifySbom = [
+  "cosign",
+  "verify-attestation",
+  "--type",
+  "spdxjson",
+  `ghcr.io/absolutejs/paas-actuator@sha256:${DIGEST}`,
+] as const;
+const notYet = new Error(
+  "cosign failed: Error: none of the attestations matched the predicate type: spdxjson, found: https://slsa.dev/provenance/v1",
+);
+
+describe("verification against a lagging registry", () => {
+  test("retries a verification until the attestation is visible", async () => {
+    // 2026-10-28: the SBOM was verified right after it was attached and the
+    // registry still served the tag from before; four images failed a release.
+    let calls = 0;
+    const slept: number[] = [];
+    const runner = retryingVerification(
+      async () => {
+        calls += 1;
+        if (calls < ATTEMPTS_UNTIL_VISIBLE) throw notYet;
+
+        return { stderr: "", stdout: "verified" };
+      },
+      {
+        delaysMs: [FIRST_DELAY, SECOND_DELAY],
+        sleep: async (delay) => slept.push(delay),
+      },
+    );
+
+    expect(await runner(verifySbom)).toEqual({
+      stderr: "",
+      stdout: "verified",
+    });
+    expect(calls).toBe(ATTEMPTS_UNTIL_VISIBLE);
+    expect(slept).toEqual([FIRST_DELAY, SECOND_DELAY]);
+  });
+
+  test("gives up after its last delay", async () => {
+    let calls = 0;
+    const runner = retryingVerification(
+      async () => {
+        calls += 1;
+        throw notYet;
+      },
+      { delaysMs: [FIRST_DELAY, SECOND_DELAY], sleep: async () => undefined },
+    );
+
+    await expect(runner(verifySbom)).rejects.toThrow(
+      "none of the attestations",
+    );
+    expect(calls).toBe(ATTEMPTS_UNTIL_VISIBLE);
+  });
+
+  test("a wrong identity fails at once, never retried", async () => {
+    let calls = 0;
+    const runner = retryingVerification(
+      async () => {
+        calls += 1;
+        throw new Error(
+          "cosign failed: Error: none of the expected identities matched what was in the certificate",
+        );
+      },
+      { sleep: async () => undefined },
+    );
+
+    await expect(runner(verifySbom)).rejects.toThrow("expected identities");
+    expect(calls).toBe(1);
+  });
+
+  test("a signing command is never retried by it", async () => {
+    let calls = 0;
+    const runner = retryingVerification(
+      async () => {
+        calls += 1;
+        throw notYet;
+      },
+      { sleep: async () => undefined },
+    );
+
+    await expect(
+      runner(["cosign", "attest", "--yes", "--predicate", "p.json", "ref"]),
+    ).rejects.toThrow();
+    expect(calls).toBe(1);
   });
 });

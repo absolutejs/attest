@@ -5,6 +5,20 @@
 		{
 			"changes": [
 				{
+					"kind": "fixed",
+					"summary": "Image verification retries briefly when the registry has not caught up: `cosign verify` and `verify-attestation` are retried after 2, 4, 8 and 16 seconds, but only for answers that mean the attestation or signature is not visible yet. A wrong identity, issuer or signature still fails at once. Verifying an SBOM right after attaching it read the tag from before the write and failed a release (`retryingVerification`)"
+				},
+				{
+					"kind": "changed",
+					"summary": "The CLI writes what each successful cosign command reported (its transparency-log entry and push target) to stderr, so a release log shows where every signature and attestation went"
+				}
+			],
+			"date": "2026-10-28",
+			"version": "0.2.2"
+		},
+		{
+			"changes": [
+				{
 					"detail": "Signing the same payload for the same digest with the same key yields the same transparency-log entry, and Rekor refuses a second copy with HTTP 409 (\"an equivalent entry already exists\"). Re-attesting an unchanged, reused image therefore failed although its attestation was already published. `publish-image` and `sign-blobs` now treat a sign or attest refused only that way as done; the verification that follows each one in the plan still has to find the attestation for that digest and identity. Every other failure, and any verification failure, still fails. `toleratingExistingLogEntries` wraps a command runner this way.",
 					"kind": "fixed",
 					"summary": "Re-attesting an unchanged artifact no longer fails on the transparency log's duplicate-entry 409",

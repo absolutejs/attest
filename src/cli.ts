@@ -7,6 +7,7 @@ import {
   createBlobSigningCommands,
   createBlobVerificationCommand,
   createImagePublicationCommands,
+  retryingVerification,
   createImageVerificationCommands,
   executeCommandPlan,
   githubWorkflowIdentityFromEnvironment,
@@ -45,6 +46,13 @@ const runner: CommandRunner = async (command) => {
   if (exitCode !== 0)
     throw new Error(
       `${command[0]} failed: ${stderr.trim() || `exit ${exitCode}`}`,
+    );
+  // What cosign did: the transparency-log entry it wrote and where it
+  // pushed. A release once failed with an SBOM that was neither logged nor
+  // attached, and nothing it had said was kept (PAAS, 2026-10-28).
+  if (stderr.trim())
+    process.stderr.write(
+      `[${command.slice(0, 2).join(" ")}] ${stderr.trim()}\n`,
     );
 
   return { stderr, stdout };
@@ -105,7 +113,7 @@ if (command === "provenance") {
       provenancePath,
       sbomPath,
     }),
-    toleratingExistingLogEntries(runner),
+    toleratingExistingLogEntries(retryingVerification(runner)),
   );
   await writeFile(
     evidencePath,
@@ -148,7 +156,7 @@ if (command === "provenance") {
   await assertCosignVersion(runner);
   await executeCommandPlan(
     createImageVerificationCommands({ identity, imageReference }),
-    runner,
+    retryingVerification(runner),
   );
 } else if (command === "bundle-path") {
   console.log(
