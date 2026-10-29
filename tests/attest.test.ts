@@ -13,6 +13,7 @@ import {
   createSlsaProvenancePredicate,
   defineGithubWorkflowIdentity,
   executeCommandPlan,
+  executeSigningPlan,
   githubCertificateIdentity,
   githubWorkflowIdentityFromEnvironment,
   imageAttestationReferences,
@@ -411,5 +412,116 @@ describe("verification against a lagging registry", () => {
       runner(["cosign", "attest", "--yes", "--predicate", "p.json", "ref"]),
     ).rejects.toThrow();
     expect(calls).toBe(1);
+  });
+});
+
+describe("an attestation that never reached the registry", () => {
+  const RESIGN_ATTEMPTS = 2;
+  const ATTESTS_BEFORE_GIVING_UP = RESIGN_ATTEMPTS + 1;
+  const attestSbom = [
+    "cosign",
+    "attest",
+    "--yes",
+    "--predicate",
+    "sbom.spdx.json",
+    "--type",
+    "spdxjson",
+    `ghcr.io/absolutejs/paas-control-plane@sha256:${DIGEST}`,
+  ] as const;
+
+  test("runs the signing command again and verifies once more", async () => {
+    // 2026-10-29: the SBOM attest left nothing in the transparency log or the
+    // registry, and no amount of waiting made the verification pass.
+    let attached = 0;
+    const ran: string[] = [];
+    const resigned: string[] = [];
+    const results = await executeSigningPlan(
+      [attestSbom, verifySbom],
+      async (command) => {
+        ran.push(command[1] ?? "");
+        if (command[1] === "attest") {
+          attached += 1;
+
+          return { stderr: "", stdout: "" };
+        }
+        if (attached < RESIGN_ATTEMPTS) throw notYet;
+
+        return { stderr: "", stdout: "verified" };
+      },
+      { onResign: (command) => resigned.push(command[1] ?? "") },
+    );
+
+    expect(ran).toEqual([
+      "attest",
+      "verify-attestation",
+      "attest",
+      "verify-attestation",
+    ]);
+    expect(resigned).toEqual(["attest"]);
+    expect(results).toEqual([
+      { stderr: "", stdout: "" },
+      { stderr: "", stdout: "verified" },
+    ]);
+  });
+
+  test("stops after its last attempt and keeps the verification's answer", async () => {
+    let attests = 0;
+    await expect(
+      executeSigningPlan(
+        [attestSbom, verifySbom],
+        async (command) => {
+          if (command[1] === "attest") {
+            attests += 1;
+
+            return { stderr: "", stdout: "" };
+          }
+          throw notYet;
+        },
+        { resignAttempts: RESIGN_ATTEMPTS },
+      ),
+    ).rejects.toThrow("none of the attestations");
+    expect(attests).toBe(ATTESTS_BEFORE_GIVING_UP);
+  });
+
+  test("a wrong identity is never signed again", async () => {
+    let attests = 0;
+    await expect(
+      executeSigningPlan([attestSbom, verifySbom], async (command) => {
+        if (command[1] === "attest") {
+          attests += 1;
+
+          return { stderr: "", stdout: "" };
+        }
+        throw new Error(
+          "cosign failed: Error: none of the expected identities matched what was in the certificate",
+        );
+      }),
+    ).rejects.toThrow("expected identities");
+    expect(attests).toBe(1);
+  });
+
+  test("a verification with no signing command before it is not repeated", async () => {
+    let verifications = 0;
+    await expect(
+      executeSigningPlan([verifySbom], async () => {
+        verifications += 1;
+        throw notYet;
+      }),
+    ).rejects.toThrow("none of the attestations");
+    expect(verifications).toBe(1);
+  });
+
+  test("a tolerated duplicate is reported", async () => {
+    const reported: string[] = [];
+    const conflict = new Error(
+      "cosign failed: [409] an equivalent entry already exists in the transparency log",
+    );
+    await toleratingExistingLogEntries(
+      async () => {
+        throw conflict;
+      },
+      { onTolerated: (_command, message) => reported.push(message) },
+    )(attestSbom);
+    expect(reported).toEqual([conflict.message]);
   });
 });

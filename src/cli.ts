@@ -10,6 +10,7 @@ import {
   retryingVerification,
   createImageVerificationCommands,
   executeCommandPlan,
+  executeSigningPlan,
   githubWorkflowIdentityFromEnvironment,
   imageAttestationReferences,
   sigstoreBundlePath,
@@ -57,6 +58,13 @@ const runner: CommandRunner = async (command) => {
 
   return { stderr, stdout };
 };
+
+// A duplicate the transparency log refused is treated as done, so it is the
+// one signing outcome the runner above never reports; say so here.
+const reportTolerated = (command: readonly string[], message: string) =>
+  process.stderr.write(
+    `[${command.slice(0, 2).join(" ")}] treated as already made: ${message}\n`,
+  );
 
 const requiredArgument = (index: number, description: string) => {
   const candidate = process.argv[index]?.trim();
@@ -106,14 +114,22 @@ if (command === "provenance") {
     "evidence output path",
   );
   await assertCosignVersion(runner);
-  await executeCommandPlan(
+  await executeSigningPlan(
     createImagePublicationCommands({
       identity,
       imageReference,
       provenancePath,
       sbomPath,
     }),
-    toleratingExistingLogEntries(retryingVerification(runner)),
+    toleratingExistingLogEntries(retryingVerification(runner), {
+      onTolerated: reportTolerated,
+    }),
+    {
+      onResign: (signing, message) =>
+        process.stderr.write(
+          `[${signing.slice(0, 2).join(" ")}] running again, the verification after it still found nothing: ${message}\n`,
+        ),
+    },
   );
   await writeFile(
     evidencePath,
@@ -131,7 +147,7 @@ if (command === "provenance") {
     artifactPaths.flatMap((artifactPath) =>
       createBlobSigningCommands({ artifactPath, identity }),
     ),
-    toleratingExistingLogEntries(runner),
+    toleratingExistingLogEntries(runner, { onTolerated: reportTolerated }),
   );
 } else if (command === "verify-blobs") {
   const identity = githubWorkflowIdentityFromEnvironment(environment);
