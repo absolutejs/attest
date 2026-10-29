@@ -383,13 +383,20 @@ const isSigningCommand = (command: readonly string[]) =>
     command[1] === "attest-blob");
 
 export const toleratingExistingLogEntries =
-  (runner: CommandRunner) => async (command: readonly string[]) => {
+  (
+    runner: CommandRunner,
+    options: {
+      onTolerated?: (command: readonly string[], message: string) => void;
+    } = {},
+  ) =>
+  async (command: readonly string[]) => {
     try {
       return await runner(command);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!isSigningCommand(command) || !EXISTING_LOG_ENTRY.test(message))
         throw error;
+      options.onTolerated?.(command, message);
 
       return { stderr: message, stdout: "" };
     }
@@ -445,6 +452,58 @@ export const retryingVerification =
 
     return attempt(0);
   };
+
+/* Waiting does not help when the attestation never reached the registry: on
+   2026-10-29 a PAAS release attested an image's SBOM, the transparency log
+   holds no entry for it, nothing was attached, and the verification after it
+   found only the provenance for over a minute. When a verification still
+   cannot see what the signing command just before it made, that command runs
+   again, with fresh ephemeral keys, and the verification follows it again. A
+   duplicate attestation is harmless; verification accepts any matching one. */
+const RESIGN_ATTEMPTS = 2;
+
+export const executeSigningPlan = async (
+  commands: ReadonlyArray<ReadonlyArray<string>>,
+  runner: CommandRunner,
+  options: {
+    onResign?: (command: readonly string[], message: string) => void;
+    resignAttempts?: number;
+  } = {},
+) => {
+  const resignAttempts = options.resignAttempts ?? RESIGN_ATTEMPTS;
+  const verify = async (
+    verification: readonly string[],
+    signing: readonly string[] | undefined,
+    remaining: number,
+  ): Promise<CommandResult> => {
+    try {
+      return await runner(verification);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        !signing ||
+        !isSigningCommand(signing) ||
+        !NOT_YET_VISIBLE.test(message) ||
+        remaining === 0
+      )
+        throw error;
+      options.onResign?.(signing, message);
+      await runner(signing);
+
+      return verify(verification, signing, remaining - 1);
+    }
+  };
+
+  return commands.reduce(
+    async (resultsPromise, command, index) => [
+      ...(await resultsPromise),
+      isVerificationCommand(command)
+        ? await verify(command, commands[index - 1], resignAttempts)
+        : await runner(command),
+    ],
+    Promise.resolve<CommandResult[]>([]),
+  );
+};
 
 export const verifyPortableBlobBundle = async (input: {
   artifact: string | Uint8Array;
